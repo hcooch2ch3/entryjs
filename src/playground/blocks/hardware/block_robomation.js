@@ -13231,6 +13231,1491 @@ CheeseRobot.prototype.hat010SetBrightnessTo = function(script) {
     return script.callReturn();
 };
 
+/**PioButtonChecker**/
+function PioButtonChecker() {
+    this.reset();
+}
+
+PioButtonChecker.prototype.reset = function() {
+    this.__state = 0;
+    this.__pressTime = 0;
+    this.__clicked = false;
+    this.__longPressed = false;
+    this.__prevPressed = false;
+    this.__pressedEvent = false;
+    this.__releasedEvent = false;
+    this.__clickedEvent = false;
+    this.__longPressedEvent = false;
+};
+
+PioButtonChecker.prototype.clearEvent = function() {
+    this.__pressedEvent = false;
+    this.__releasedEvent = false;
+    this.__clickedEvent = false;
+    this.__longPressedEvent = false;
+};
+
+PioButtonChecker.prototype.check = function(pressed) {
+    this.__clicked = false;
+    this.__longPressed = false;
+    switch (this.__state) {
+        case 0: // ready state and wait for press
+            if (pressed) {
+                this.__pressTime = Date.now();
+                this.__state = 1;
+            }
+            break;
+        case 1: // check how long button is pressed
+            if (pressed) {
+                if (Date.now() - this.__pressTime > 1500) {
+                    this.__longPressed = true;
+                    this.__state = 2;
+                }
+            } else {
+                if (Date.now() - this.__pressTime < 750) {
+                    this.__clicked = true;
+                }
+                this.__state = 0;
+            }
+            break;
+        case 2: // check release of long-click
+            if (!pressed) this.__state = 0;
+            break;
+    }
+    if (!this.__prevPressed && pressed) this.__pressedEvent = true;
+    if (this.__prevPressed && !pressed) this.__releasedEvent = true;
+    if (this.__clicked) this.__clickedEvent = true;
+    if (this.__longPressed) this.__longPressedEvent = true;
+    this.__prevPressed = pressed;
+};
+
+PioButtonChecker.prototype.isPressed = function() {
+    return this.__pressedEvent;
+};
+
+PioButtonChecker.prototype.isReleased = function() {
+    return this.__releasedEvent;
+};
+
+PioButtonChecker.prototype.isClicked = function() {
+    return this.__clickedEvent;
+};
+
+PioButtonChecker.prototype.isLongPressed = function() {
+    return this.__longPressedEvent;
+};
+
+/**PioRobot**/
+function PioRobot(index) {
+    this.sensory = {
+        signalStrength: 0,
+        forwardButton: 0,
+        backwardButton: 0,
+        leftButton: 0,
+        rightButton: 0,
+        runButton: 0,
+        behaviorButton: 0,
+        repeatButton: 0,
+        clearButton: 0,
+        wheelStateId: 0,
+        neckEncoder: 0,
+        neckStateId: 0,
+        soundStateId: 0,
+        batteryState: 3,
+        usbState: 0,
+        chargeState: 0,
+    };
+    this.motoring = {
+        group: 'pio',
+        module: 'pio',
+        index,
+    };
+    this.wheelStateId = -1;
+    this.neckStateId = -1;
+    this.soundStateId = -1;
+    this.blockId = 0;
+    this.wheelMoving = false;
+    this.motionCallback = undefined;
+    this.motioning = false;
+    this.boardCommand = 0;
+    this.boardState = 0;
+    this.boardCallback = undefined;
+    this.boarding = false;
+    this.neckMotionCallback = undefined;
+    this.neckMotioning = false;
+    this.currentSound = 0;
+    this.soundRepeat = 1;
+    this.soundCallback = undefined;
+    this.sounding = false;
+    this.buzzing = false;
+    this.noteId = 0;
+    this.noteTimer1 = undefined;
+    this.noteTimer2 = undefined;
+    this.noting = false;
+    this.resting = false;
+    this.tempo = 60;
+    this.timeouts = [];
+    this.buttons = new Array(8);
+    this.buttonCheckers = new Array(8);
+    for (let i = 0; i < 8; ++i) {
+        this.buttons[i] = 0;
+        this.buttonCheckers[i] = new PioButtonChecker();
+    }
+}
+
+PioRobot.prototype.__PORT_MAP = {
+    group: 'pio',
+    module: 'pio',
+    leftWheel: 0,
+    rightWheel: 0,
+    leftEyeRed: 0,
+    leftEyeGreen: 0,
+    leftEyeBlue: 0,
+    rightEyeRed: 0,
+    rightEyeGreen: 0,
+    rightEyeBlue: 0,
+    buzzer: 0,
+    turboId: 0,
+    turbo: 0,
+    pulseId: 0,
+    pulse: 0,
+    neckSpeedId: 0,
+    neckSpeed: 4,
+    neckAngleId: 0,
+    neckAngle: 0,
+    eyePatternId: 0,
+    eyePattern: 0,
+    noteId: 0,
+    note: 0,
+    soundId: 0,
+    sound: 0,
+    motionId: 0,
+    motionType: 0,
+    motionUnit: 0,
+    motionSpeed: 0,
+    motionValue: 0,
+    motionRadius: 0,
+};
+
+PioRobot.prototype.setZero = function() {
+    const portMap = this.__PORT_MAP;
+    const motoring = this.motoring;
+    for (const port in portMap) {
+        motoring[port] = portMap[port];
+    }
+    this.wheelStateId = -1;
+    this.neckStateId = -1;
+    this.soundStateId = -1;
+    this.blockId = 0;
+    this.wheelMoving = false;
+    this.motionCallback = undefined;
+    this.motioning = false;
+    this.boardCommand = 0;
+    this.boardState = 0;
+    this.boardCallback = undefined;
+    this.boarding = false;
+    this.neckMotionCallback = undefined;
+    this.neckMotioning = false;
+    this.currentSound = 0;
+    this.soundRepeat = 1;
+    this.soundCallback = undefined;
+    this.sounding = false;
+    this.buzzing = false;
+    this.noteId = 0;
+    this.noteTimer1 = undefined;
+    this.noteTimer2 = undefined;
+    this.noting = false;
+    this.resting = false;
+    this.tempo = 60;
+    for (let i = 0; i < 8; ++i) {
+        this.buttons[i] = 0;
+        this.buttonCheckers[i].reset();
+    }
+    this.__removeAllTimeouts();
+};
+
+PioRobot.prototype.afterReceive = function(pd) {
+    this.sensory = pd;
+    this.handleSensory();
+};
+
+PioRobot.prototype.afterSend = function(sq) {};
+
+PioRobot.prototype.setMotoring = function(motoring) {
+    this.motoring = motoring;
+    // getRobot()은 블록 실행마다 this.motoring을 공유 Entry.hw.sendQueue로 바꾼다.
+    // 그 객체에는 Pio의 motoring 필드가 아직 없을 수 있으므로 빠진 필드를 채운다.
+    // 그래야 (this.motoring.xId % 255) + 1 계산이 undefined를 읽어 NaN이 되지 않는다.
+    const portMap = this.__PORT_MAP;
+    for (const port in portMap) {
+        if (motoring[port] === undefined) {
+            motoring[port] = portMap[port];
+        }
+    }
+};
+
+PioRobot.prototype.__setModule = function() {
+    this.motoring.group = 'pio';
+    this.motoring.module = 'pio';
+};
+
+PioRobot.prototype.clearEvent = function() {
+    for (let i = 0; i < 8; ++i) {
+        this.buttonCheckers[i].clearEvent();
+    }
+};
+
+PioRobot.prototype.__BUTTON_INDEX = {
+    MOVE_FORWARD: 0,
+    MOVE_BACKWARD: 1,
+    MOVE_LEFT: 2,
+    MOVE_RIGHT: 3,
+    RUN: 4,
+    BEHAVIOR: 5,
+    REPEAT: 6,
+    CLEAR: 7,
+};
+
+PioRobot.prototype.__BUTTONS = [
+    'forwardButton',
+    'backwardButton',
+    'leftButton',
+    'rightButton',
+    'runButton',
+    'behaviorButton',
+    'repeatButton',
+    'clearButton',
+];
+
+PioRobot.prototype.__removeTimeout = function(id) {
+    clearTimeout(id);
+    const idx = this.timeouts.indexOf(id);
+    if (idx >= 0) {
+        this.timeouts.splice(idx, 1);
+    }
+};
+
+PioRobot.prototype.__removeAllTimeouts = function() {
+    const timeouts = this.timeouts;
+    for (const i in timeouts) {
+        clearTimeout(timeouts[i]);
+    }
+    this.timeouts = [];
+};
+
+PioRobot.prototype.__setTurbo = function(turbo) {
+    this.motoring.turbo = turbo;
+    this.motoring.turboId = (this.motoring.turboId % 255) + 1;
+};
+
+PioRobot.prototype.__setPulse = function(pulse) {
+    this.motoring.pulse = pulse;
+    this.motoring.pulseId = (this.motoring.pulseId % 255) + 1;
+};
+
+PioRobot.prototype.__setNeckSpeed = function(speed) {
+    this.motoring.neckSpeed = speed;
+    this.motoring.neckSpeedId = (this.motoring.neckSpeedId % 255) + 1;
+};
+
+PioRobot.prototype.__setNeckAngle = function(deg) {
+    this.motoring.neckAngle = deg;
+    this.motoring.neckAngleId = (this.motoring.neckAngleId % 255) + 1;
+    this.neckMotioning = deg != 0;
+};
+
+PioRobot.prototype.__setNote = function(note) {
+    this.motoring.note = note;
+    this.motoring.noteId = (this.motoring.noteId % 255) + 1;
+};
+
+PioRobot.prototype.__issueNoteId = function() {
+    this.noteId = this.blockId = (this.blockId % 65535) + 1;
+    return this.noteId;
+};
+
+PioRobot.prototype.__cancelNote = function() {
+    this.noteId = 0;
+    if (this.noteTimer1 !== undefined) {
+        this.__removeTimeout(this.noteTimer1);
+    }
+    if (this.noteTimer2 !== undefined) {
+        this.__removeTimeout(this.noteTimer2);
+    }
+    this.noteTimer1 = undefined;
+    this.noteTimer2 = undefined;
+};
+
+PioRobot.prototype.__setSound = function(sound) {
+    this.motoring.sound = sound;
+    this.motoring.soundId = (this.motoring.soundId % 255) + 1;
+};
+
+PioRobot.prototype.__runSound = function(sound, count) {
+    if (typeof count != 'number') count = 1;
+    if (count < 0) count = -1;
+    if (count) {
+        this.currentSound = sound;
+        this.soundRepeat = count;
+        this.__setSound(sound);
+    }
+    this.sounding = sound != 0;
+};
+
+PioRobot.prototype.__cancelSound = function() {
+    this.soundCallback = undefined;
+};
+
+PioRobot.prototype.__setMotion = function(type, unit, speed, value, radius) {
+    const motoring = this.motoring;
+    motoring.motionType = type;
+    motoring.motionUnit = unit;
+    motoring.motionSpeed = speed;
+    motoring.motionValue = value;
+    motoring.motionRadius = radius;
+    this.motoring.motionId = (this.motoring.motionId % 255) + 1;
+    this.motioning = type != 0;
+};
+
+PioRobot.prototype.__cancelMotion = function() {
+    this.motionCallback = undefined;
+};
+
+PioRobot.prototype.__cancelBoard = function() {
+    this.boardCommand = 0;
+    this.boardState = 0;
+    this.boardCallback = undefined;
+};
+
+PioRobot.prototype.__cancelNeckMotion = function() {
+    this.neckMotionCallback = undefined;
+};
+
+PioRobot.prototype.__checkWheelMoving = function() {
+    const motoring = this.motoring;
+    this.wheelMoving = motoring.leftWheel != 0 || motoring.rightWheel != 0;
+};
+
+PioRobot.prototype.__checkSoundPlaying = function() {
+    const motoring = this.motoring;
+    this.buzzing = motoring.buzzer != 0;
+    this.noting = motoring.note != 0;
+    this.resting = false;
+};
+
+PioRobot.prototype.handleSensory = function() {
+    const sensory = this.sensory;
+
+    // 버튼 엣지 이벤트는 매 수신 패킷 시작 시(재감지 전) 지운다. afterSend가 아니다.
+    // afterReceive가 직후 'pioWhenButtonState'를 발생시키고 해당 햇 블록은 다음 엔진
+    // 틱에서 실행되므로, 지우는 시점을 패킷 주기에 맞춰야 엣지 플래그가 패킷 사이
+    // 구간 동안 살아 있어 햇이 엣지당 한 번씩 감지한다.
+    this.clearEvent();
+    for (let i = 0; i < 8; ++i) {
+        this.buttons[i] = sensory[this.__BUTTONS[i]];
+        this.buttonCheckers[i].check(this.buttons[i] == 1);
+    }
+    if (this.boardCallback && sensory.wheelStateId !== undefined) {
+        const t = sensory.wheelStateId;
+        if (t != this.wheelStateId) {
+            if (this.wheelStateId != -1) {
+                const motoring = this.motoring;
+                if (this.boardCommand == 1 || this.boardCommand == 2) {
+                    motoring.leftWheel = 0;
+                    motoring.rightWheel = 0;
+                    const callback = this.boardCallback;
+                    this.__cancelBoard();
+                    this.boarding = false;
+                    this.__checkWheelMoving();
+                    if (callback) callback();
+                } else if (this.boardCommand == 3) {
+                    switch (this.boardState) {
+                        case 1:
+                            this.__board(3, 2, 3, 90, this.boardCallback);
+                            break;
+                        case 2:
+                            this.__board(3, 3, 1, 11.45, this.boardCallback);
+                            break;
+                        case 3: {
+                            motoring.leftWheel = 0;
+                            motoring.rightWheel = 0;
+                            const callback = this.boardCallback;
+                            this.__cancelBoard();
+                            this.boarding = false;
+                            this.__checkWheelMoving();
+                            if (callback) callback();
+                            break;
+                        }
+                    }
+                } else if (this.boardCommand == 4) {
+                    switch (this.boardState) {
+                        case 1:
+                            this.__board(4, 2, 4, 90, this.boardCallback);
+                            break;
+                        case 2:
+                            this.__board(4, 3, 1, 11.45, this.boardCallback);
+                            break;
+                        case 3: {
+                            motoring.leftWheel = 0;
+                            motoring.rightWheel = 0;
+                            const callback = this.boardCallback;
+                            this.__cancelBoard();
+                            this.boarding = false;
+                            this.__checkWheelMoving();
+                            if (callback) callback();
+                            break;
+                        }
+                    }
+                } else if (this.boardCommand == 5) {
+                    switch (this.boardState) {
+                        case 1:
+                            this.__board(5, 2, 3, 90, this.boardCallback);
+                            break;
+                        case 2:
+                            this.__board(5, 3, 1, 1.45, this.boardCallback);
+                            break;
+                        case 3: {
+                            motoring.leftWheel = 0;
+                            motoring.rightWheel = 0;
+                            const callback = this.boardCallback;
+                            this.__cancelBoard();
+                            this.boarding = false;
+                            this.__checkWheelMoving();
+                            if (callback) callback();
+                            break;
+                        }
+                    }
+                } else if (this.boardCommand == 6) {
+                    switch (this.boardState) {
+                        case 1:
+                            this.__board(6, 2, 4, 90, this.boardCallback);
+                            break;
+                        case 2:
+                            this.__board(6, 3, 1, 1.45, this.boardCallback);
+                            break;
+                        case 3: {
+                            motoring.leftWheel = 0;
+                            motoring.rightWheel = 0;
+                            const callback = this.boardCallback;
+                            this.__cancelBoard();
+                            this.boarding = false;
+                            this.__checkWheelMoving();
+                            if (callback) callback();
+                            break;
+                        }
+                    }
+                }
+            }
+            this.wheelStateId = t;
+        }
+    }
+    if (this.motionCallback && sensory.wheelStateId !== undefined) {
+        const t = sensory.wheelStateId;
+        if (t != this.wheelStateId) {
+            if (this.wheelStateId != -1) {
+                this.motoring.leftWheel = 0;
+                this.motoring.rightWheel = 0;
+                this.motioning = false;
+                const callback = this.motionCallback;
+                this.__cancelMotion();
+                this.__checkWheelMoving();
+                if (callback) callback();
+            }
+            this.wheelStateId = t;
+        }
+    }
+    if (this.neckMotionCallback && sensory.neckStateId !== undefined) {
+        const t = sensory.neckStateId;
+        if (t != this.neckStateId) {
+            if (this.neckStateId != -1) {
+                this.neckMotioning = false;
+                const callback = this.neckMotionCallback;
+                this.__cancelNeckMotion();
+                if (callback) callback();
+            }
+            this.neckStateId = t;
+        }
+    }
+    if (sensory.soundStateId !== undefined) {
+        const t = sensory.soundStateId;
+        if (t != this.soundStateId) {
+            if (this.soundStateId != -1) {
+                if (this.currentSound > 0) {
+                    if (this.soundRepeat < 0) {
+                        this.__runSound(this.currentSound, -1);
+                    } else if (this.soundRepeat > 1) {
+                        this.soundRepeat--;
+                        this.__runSound(this.currentSound, this.soundRepeat);
+                    } else {
+                        this.currentSound = 0;
+                        this.soundRepeat = 1;
+                        this.sounding = false;
+                        const callback = this.soundCallback;
+                        this.__cancelSound();
+                        this.__checkSoundPlaying();
+                        if (callback) callback();
+                    }
+                } else {
+                    this.currentSound = 0;
+                    this.soundRepeat = 1;
+                    this.sounding = false;
+                    const callback = this.soundCallback;
+                    this.__cancelSound();
+                    this.__checkSoundPlaying();
+                    if (callback) callback();
+                }
+            }
+            this.soundStateId = t;
+        }
+    }
+};
+
+PioRobot.prototype.__board = function(command, state, type, value, callback) {
+    const motoring = this.motoring;
+    this.__cancelMotion();
+
+    motoring.leftWheel = 0;
+    motoring.rightWheel = 0;
+    this.boardCommand = command;
+    this.boardState = state;
+    this.boardCallback = callback;
+    this.boarding = true;
+    this.__setPulse(0);
+    motoring.motionType = type;
+    motoring.motionUnit = 1;
+    motoring.motionSpeed = 0;
+    motoring.motionValue = value;
+    motoring.motionRadius = 0;
+    this.motoring.motionId = (this.motoring.motionId % 255) + 1;
+    this.__checkWheelMoving();
+};
+
+PioRobot.prototype.__UNITS = {
+    CM: 1,
+    DEGREES: 1,
+    SECONDS: 2,
+    PULSES: 3,
+};
+
+PioRobot.prototype.__motion = function(type, callback) {
+    const motoring = this.motoring;
+    this.__cancelBoard();
+
+    motoring.leftWheel = 0;
+    motoring.rightWheel = 0;
+    this.__setPulse(0);
+    this.__setMotion(type, 1, 0, 0, 0); // type, unit, speed, value, radius
+    this.motionCallback = callback;
+    this.__checkWheelMoving();
+};
+
+PioRobot.prototype.__motionUnit = function(type, unit, value, callback) {
+    const motoring = this.motoring;
+    this.__cancelBoard();
+    this.__cancelMotion();
+
+    motoring.leftWheel = 0;
+    motoring.rightWheel = 0;
+    this.__setPulse(0);
+    value = parseFloat(value);
+    if (value && value > 0) {
+        this.__setMotion(type, unit, 0, value, 0); // type, unit, speed, value, radius
+        this.motionCallback = callback;
+        this.__checkWheelMoving();
+    } else {
+        this.__setMotion(0, 0, 0, 0, 0);
+        this.__checkWheelMoving();
+        callback();
+    }
+};
+
+PioRobot.prototype.__RGBS = {
+    RED: [255, 0, 0],
+    ORANGE: [255, 63, 0],
+    YELLOW: [255, 255, 0],
+    GREEN: [0, 255, 0],
+    SKY_BLUE: [0, 255, 255],
+    BLUE: [0, 0, 255],
+    VIOLET: [63, 0, 255],
+    PURPLE: [255, 0, 255],
+    WHITE: [255, 255, 255],
+};
+
+PioRobot.prototype.__setRgb = function(eye, red, green, blue) {
+    const motoring = this.motoring;
+    red = parseInt(red);
+    green = parseInt(green);
+    blue = parseInt(blue);
+    if (eye == 'LEFT') {
+        if (typeof red == 'number') motoring.leftEyeRed = red;
+        if (typeof green == 'number') motoring.leftEyeGreen = green;
+        if (typeof blue == 'number') motoring.leftEyeBlue = blue;
+    } else if (eye == 'RIGHT') {
+        if (typeof red == 'number') motoring.rightEyeRed = red;
+        if (typeof green == 'number') motoring.rightEyeGreen = green;
+        if (typeof blue == 'number') motoring.rightEyeBlue = blue;
+    } else {
+        if (typeof red == 'number') {
+            motoring.leftEyeRed = red;
+            motoring.rightEyeRed = red;
+        }
+        if (typeof green == 'number') {
+            motoring.leftEyeGreen = green;
+            motoring.rightEyeGreen = green;
+        }
+        if (typeof blue == 'number') {
+            motoring.leftEyeBlue = blue;
+            motoring.rightEyeBlue = blue;
+        }
+    }
+};
+
+PioRobot.prototype.__changeRgb = function(eye, red, green, blue) {
+    const motoring = this.motoring;
+    red = parseInt(red);
+    green = parseInt(green);
+    blue = parseInt(blue);
+    if (eye == 'LEFT') {
+        if (typeof red == 'number') motoring.leftEyeRed += red;
+        if (typeof green == 'number') motoring.leftEyeGreen += green;
+        if (typeof blue == 'number') motoring.leftEyeBlue += blue;
+    } else if (eye == 'RIGHT') {
+        if (typeof red == 'number') motoring.rightEyeRed += red;
+        if (typeof green == 'number') motoring.rightEyeGreen += green;
+        if (typeof blue == 'number') motoring.rightEyeBlue += blue;
+    } else {
+        if (typeof red == 'number') {
+            motoring.leftEyeRed += red;
+            motoring.rightEyeRed += red;
+        }
+        if (typeof green == 'number') {
+            motoring.leftEyeGreen += green;
+            motoring.rightEyeGreen += green;
+        }
+        if (typeof blue == 'number') {
+            motoring.leftEyeBlue += blue;
+            motoring.rightEyeBlue += blue;
+        }
+    }
+};
+
+PioRobot.prototype.__SOUNDS = {
+    BEEP: 1,
+    RANDOM_BEEP: 2,
+    NOISE: 10,
+    SIREN: 3,
+    ENGINE: 4,
+    CHOP: 11,
+    ROBOT: 5,
+    DIBIDIBIDIP: 8,
+    GOOD_JOB: 9,
+    RANDOM_MELODY: 18,
+    POO: 20,
+    HAPPY: 12,
+    ANGRY: 13,
+    SAD: 14,
+    SLEEP: 15,
+    MARCH: 6,
+    BIRTHDAY: 7,
+    BATH: 21,
+};
+
+PioRobot.prototype.__playSound = function(soundField, count) {
+    const motoring = this.motoring;
+    this.__cancelNote();
+    this.__cancelSound();
+
+    const sound = this.__SOUNDS[soundField];
+    count = parseInt(count);
+    motoring.buzzer = 0;
+    this.__setNote(0);
+    if (sound && count) {
+        this.__runSound(sound, count);
+    } else {
+        this.__runSound(0);
+    }
+    this.__checkSoundPlaying();
+};
+
+PioRobot.prototype.__NOTES = {
+    C: 4,
+    CS: 5,
+    D: 6,
+    DS: 7,
+    E: 8,
+    F: 9,
+    FS: 10,
+    G: 11,
+    GS: 12,
+    A: 13,
+    AS: 14,
+    B: 15,
+};
+
+PioRobot.prototype.__BATTERY_STATES = {
+    NORMAL: 3,
+    MIDDLE: 2,
+    LOW: 1,
+    EMPTY: 0,
+};
+
+// -------------------- block methods (motion) --------------------
+
+PioRobot.prototype.boardMove = function(script) {
+    this.__setModule();
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        const direction = script.getField('DIRECTION');
+        const callback = () => {
+            script.isMoving = false;
+        };
+        if (direction == 'FORWARD') {
+            this.__board(1, 1, 1, 10, callback);
+        } else if (direction == 'BACKWARD') {
+            this.__board(2, 1, 2, 10, callback);
+        } else if (direction == 'LEFT') {
+            this.__board(3, 1, 2, 1.45, callback);
+        } else {
+            this.__board(4, 1, 2, 1.45, callback);
+        }
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.boardTurn = function(script) {
+    this.__setModule();
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        const direction = script.getField('DIRECTION');
+        const callback = () => {
+            script.isMoving = false;
+        };
+        if (direction == 'LEFT') {
+            this.__board(5, 1, 2, 1.45, callback);
+        } else {
+            this.__board(6, 1, 2, 1.45, callback);
+        }
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.moveForward = function(script) {
+    this.__setModule();
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        this.__motion(101, () => {
+            script.isMoving = false;
+        });
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.moveBackward = function(script) {
+    this.__setModule();
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        this.__motion(102, () => {
+            script.isMoving = false;
+        });
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.turn = function(script) {
+    this.__setModule();
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        const direction = script.getField('DIRECTION');
+        const callback = () => {
+            script.isMoving = false;
+        };
+        if (direction == 'LEFT') {
+            this.__motion(103, callback);
+        } else {
+            this.__motion(104, callback);
+        }
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.moveForwardUnit = function(script) {
+    this.__setModule();
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        const value = script.getNumberValue('VALUE');
+        const unit = this.__UNITS[script.getField('UNIT')];
+        const callback = () => {
+            script.isMoving = false;
+        };
+        if (value < 0) {
+            this.__motionUnit(2, unit, -value, callback);
+        } else {
+            this.__motionUnit(1, unit, value, callback);
+        }
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.moveBackwardUnit = function(script) {
+    this.__setModule();
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        const value = script.getNumberValue('VALUE');
+        const unit = this.__UNITS[script.getField('UNIT')];
+        const callback = () => {
+            script.isMoving = false;
+        };
+        if (value < 0) {
+            this.__motionUnit(1, unit, -value, callback);
+        } else {
+            this.__motionUnit(2, unit, value, callback);
+        }
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.turnUnit = function(script) {
+    this.__setModule();
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        const direction = script.getField('DIRECTION');
+        const value = script.getNumberValue('VALUE');
+        const unit = this.__UNITS[script.getField('UNIT')];
+        const callback = () => {
+            script.isMoving = false;
+        };
+        if (direction == 'LEFT') {
+            if (value < 0) {
+                this.__motionUnit(4, unit, -value, callback);
+            } else {
+                this.__motionUnit(3, unit, value, callback);
+            }
+        } else {
+            if (value < 0) {
+                this.__motionUnit(3, unit, -value, callback);
+            } else {
+                this.__motionUnit(4, unit, value, callback);
+            }
+        }
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.pivotUnit = function(script) {
+    this.__setModule();
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        const wheel = script.getField('WHEEL');
+        const value = script.getNumberValue('VALUE');
+        const unit = this.__UNITS[script.getField('UNIT')];
+        const toward = script.getField('TOWARD');
+        const callback = () => {
+            script.isMoving = false;
+        };
+        if (wheel == 'LEFT') {
+            if (toward == 'FORWARD') {
+                if (value < 0) this.__motionUnit(6, unit, -value, callback);
+                else this.__motionUnit(5, unit, value, callback);
+            } else {
+                if (value < 0) this.__motionUnit(5, unit, -value, callback);
+                else this.__motionUnit(6, unit, value, callback);
+            }
+        } else {
+            if (toward == 'FORWARD') {
+                if (value < 0) this.__motionUnit(8, unit, -value, callback);
+                else this.__motionUnit(7, unit, value, callback);
+            } else {
+                if (value < 0) this.__motionUnit(7, unit, -value, callback);
+                else this.__motionUnit(8, unit, value, callback);
+            }
+        }
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.changeWheels = function(script) {
+    this.__setModule();
+    const motoring = this.motoring;
+    this.__cancelBoard();
+    this.__cancelMotion();
+
+    const leftVelocity = parseFloat(script.getNumberValue('LEFT'));
+    const rightVelocity = parseFloat(script.getNumberValue('RIGHT'));
+    if (typeof leftVelocity == 'number') motoring.leftWheel += leftVelocity;
+    if (typeof rightVelocity == 'number') motoring.rightWheel += rightVelocity;
+    this.__setPulse(0);
+    this.__setMotion(0, 0, 0, 0, 0);
+    this.__checkWheelMoving();
+    return script.callReturn();
+};
+
+PioRobot.prototype.setWheels = function(script) {
+    this.__setModule();
+    const motoring = this.motoring;
+    this.__cancelBoard();
+    this.__cancelMotion();
+
+    const leftVelocity = parseFloat(script.getNumberValue('LEFT'));
+    const rightVelocity = parseFloat(script.getNumberValue('RIGHT'));
+    if (typeof leftVelocity == 'number') motoring.leftWheel = leftVelocity;
+    if (typeof rightVelocity == 'number') motoring.rightWheel = rightVelocity;
+    this.__setPulse(0);
+    this.__setMotion(0, 0, 0, 0, 0);
+    this.__checkWheelMoving();
+    return script.callReturn();
+};
+
+PioRobot.prototype.changeWheel = function(script) {
+    this.__setModule();
+    const motoring = this.motoring;
+    this.__cancelBoard();
+    this.__cancelMotion();
+
+    const wheel = script.getField('WHEEL');
+    const velocity = parseFloat(script.getNumberValue('VALUE'));
+    if (typeof velocity == 'number') {
+        if (wheel == 'LEFT') {
+            motoring.leftWheel += velocity;
+        } else if (wheel == 'RIGHT') {
+            motoring.rightWheel += velocity;
+        } else {
+            motoring.leftWheel += velocity;
+            motoring.rightWheel += velocity;
+        }
+    }
+    this.__setPulse(0);
+    this.__setMotion(0, 0, 0, 0, 0);
+    this.__checkWheelMoving();
+    return script.callReturn();
+};
+
+PioRobot.prototype.setWheel = function(script) {
+    this.__setModule();
+    const motoring = this.motoring;
+    this.__cancelBoard();
+    this.__cancelMotion();
+
+    const wheel = script.getField('WHEEL');
+    const velocity = parseFloat(script.getNumberValue('VALUE'));
+    if (typeof velocity == 'number') {
+        if (wheel == 'LEFT') {
+            motoring.leftWheel = velocity;
+        } else if (wheel == 'RIGHT') {
+            motoring.rightWheel = velocity;
+        } else {
+            motoring.leftWheel = velocity;
+            motoring.rightWheel = velocity;
+        }
+    }
+    this.__setPulse(0);
+    this.__setMotion(0, 0, 0, 0, 0);
+    this.__checkWheelMoving();
+    return script.callReturn();
+};
+
+PioRobot.prototype.stop = function(script) {
+    this.__setModule();
+    const motoring = this.motoring;
+    this.__cancelBoard();
+    this.__cancelMotion();
+
+    motoring.leftWheel = 0;
+    motoring.rightWheel = 0;
+    this.__setPulse(0);
+    this.__setMotion(0, 0, 0, 0, 0);
+    this.__checkWheelMoving();
+    return script.callReturn();
+};
+
+PioRobot.prototype.setTurboMode = function(script) {
+    this.__setModule();
+    const mode = script.getField('MODE');
+    if (mode == 'ON') this.__setTurbo(1);
+    else this.__setTurbo(0);
+    return script.callReturn();
+};
+
+PioRobot.prototype.isWheelMoving = function(script) {
+    return this.wheelMoving || this.motioning || this.boarding;
+};
+
+PioRobot.prototype.setNeckSpeed = function(script) {
+    this.__setModule();
+    const speed = parseInt(script.getField('SPEED'));
+    this.__setNeckSpeed(speed);
+    return script.callReturn();
+};
+
+PioRobot.prototype.rotateNeck = function(script) {
+    this.__setModule();
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        const direction = script.getField('DIRECTION');
+        let deg = parseFloat(script.getNumberValue('VALUE'));
+        this.__cancelNeckMotion();
+        if (typeof deg == 'number') {
+            if (direction == 'LEFT') deg *= -1;
+            this.__setNeckAngle(deg);
+            this.neckMotionCallback = () => {
+                script.isMoving = false;
+            };
+        } else {
+            script.isMoving = false;
+        }
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.stopNeck = function(script) {
+    this.__setModule();
+    this.__cancelNeckMotion();
+    this.__setNeckAngle(0);
+    return script.callReturn();
+};
+
+PioRobot.prototype.isNeckMoving = function(script) {
+    return this.neckMotioning;
+};
+
+// -------------------- block methods (looks / eye) --------------------
+
+PioRobot.prototype.setEyeColor = function(script) {
+    this.__setModule();
+    const eye = script.getField('EYE');
+    const rgb = this.__RGBS[script.getField('COLOR')];
+    if (rgb) {
+        this.__setRgb(eye, rgb[0], rgb[1], rgb[2]);
+    }
+    return script.callReturn();
+};
+
+PioRobot.prototype.setEyeColorPicker = function(script) {
+    this.__setModule();
+    const eye = script.getField('EYE');
+    const color = script.getField('COLOR');
+    const red = parseInt(color.slice(1, 3), 16);
+    const green = parseInt(color.slice(3, 5), 16);
+    const blue = parseInt(color.slice(5, 7), 16);
+    this.__setRgb(eye, red, green, blue);
+    return script.callReturn();
+};
+
+PioRobot.prototype.changeEyeRgb = function(script) {
+    this.__setModule();
+    const eye = script.getField('EYE');
+    const red = script.getNumberValue('RED');
+    const green = script.getNumberValue('GREEN');
+    const blue = script.getNumberValue('BLUE');
+    this.__changeRgb(eye, red, green, blue);
+    return script.callReturn();
+};
+
+PioRobot.prototype.setEyeRgb = function(script) {
+    this.__setModule();
+    const eye = script.getField('EYE');
+    const red = script.getNumberValue('RED');
+    const green = script.getNumberValue('GREEN');
+    const blue = script.getNumberValue('BLUE');
+    this.__setRgb(eye, red, green, blue);
+    return script.callReturn();
+};
+
+PioRobot.prototype.clearEye = function(script) {
+    this.__setModule();
+    const eye = script.getField('EYE');
+    this.__setRgb(eye, 0, 0, 0);
+    return script.callReturn();
+};
+
+// -------------------- block methods (sound) --------------------
+
+PioRobot.prototype.playSound = function(script) {
+    this.__setModule();
+    this.__playSound(script.getField('SOUND'), 1);
+    return script.callReturn();
+};
+
+PioRobot.prototype.playSoundTimes = function(script) {
+    this.__setModule();
+    this.__playSound(script.getField('SOUND'), script.getNumberValue('REPEAT'));
+    return script.callReturn();
+};
+
+PioRobot.prototype.playSoundUntil = function(script) {
+    this.__setModule();
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        const motoring = this.motoring;
+        this.__cancelNote();
+        this.__cancelSound();
+        const sound = this.__SOUNDS[script.getField('SOUND')];
+        const count = parseInt(script.getNumberValue('REPEAT'));
+        motoring.buzzer = 0;
+        this.__setNote(0);
+        if (sound && count) {
+            this.__runSound(sound, count);
+            this.soundCallback = () => {
+                script.isMoving = false;
+            };
+            this.__checkSoundPlaying();
+        } else {
+            this.__runSound(0);
+            this.__checkSoundPlaying();
+            script.isMoving = false;
+        }
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.changeBuzzer = function(script) {
+    this.__setModule();
+    const motoring = this.motoring;
+    this.__cancelNote();
+    this.__cancelSound();
+
+    const hz = parseFloat(script.getNumberValue('HZ'));
+    if (typeof hz == 'number') motoring.buzzer += hz;
+    this.__setNote(0);
+    this.__runSound(0);
+    this.__checkSoundPlaying();
+    return script.callReturn();
+};
+
+PioRobot.prototype.setBuzzer = function(script) {
+    this.__setModule();
+    const motoring = this.motoring;
+    this.__cancelNote();
+    this.__cancelSound();
+
+    const hz = parseFloat(script.getNumberValue('HZ'));
+    if (typeof hz == 'number') motoring.buzzer = hz;
+    this.__setNote(0);
+    this.__runSound(0);
+    this.__checkSoundPlaying();
+    return script.callReturn();
+};
+
+PioRobot.prototype.clearSound = function(script) {
+    this.__setModule();
+    this.__cancelNote();
+    this.__cancelSound();
+    this.motoring.buzzer = 0;
+    this.__setNote(0);
+    this.__runSound(0);
+    this.__checkSoundPlaying();
+    return script.callReturn();
+};
+
+PioRobot.prototype.playNote = function(script) {
+    this.__setModule();
+    const motoring = this.motoring;
+    this.__cancelNote();
+    this.__cancelSound();
+
+    let note = this.__NOTES[script.getField('NOTE')];
+    const octave = parseInt(script.getField('OCTAVE'));
+    motoring.buzzer = 0;
+    if (note && octave && octave > 0 && octave < 8) {
+        note += (octave - 1) * 12;
+        this.__setNote(note);
+    } else {
+        this.__setNote(0);
+    }
+    this.__runSound(0);
+    this.__checkSoundPlaying();
+    return script.callReturn();
+};
+
+PioRobot.prototype.playNoteBeat = function(script) {
+    this.__setModule();
+    const self = this;
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        const motoring = self.motoring;
+        self.__cancelNote();
+        self.__cancelSound();
+
+        let note = self.__NOTES[script.getField('NOTE')];
+        const octave = parseInt(script.getField('OCTAVE'));
+        const beat = parseFloat(script.getNumberValue('BEAT'));
+        const callback = () => {
+            script.isMoving = false;
+        };
+        motoring.buzzer = 0;
+        if (note && octave && octave > 0 && octave < 8 && beat && beat > 0 && self.tempo > 0) {
+            const id = self.__issueNoteId();
+            note += (octave - 1) * 12;
+            self.__setNote(note);
+            const timeout = (beat * 60 * 1000) / self.tempo;
+            const tail = timeout > 100 ? 100 : 0;
+            if (tail > 0) {
+                self.noteTimer1 = setTimeout(() => {
+                    if (self.noteId == id) {
+                        self.__setNote(0);
+                        if (self.noteTimer1 !== undefined) self.__removeTimeout(self.noteTimer1);
+                        self.noteTimer1 = undefined;
+                    }
+                }, timeout - tail);
+                self.timeouts.push(self.noteTimer1);
+            }
+            self.noteTimer2 = setTimeout(() => {
+                if (self.noteId == id) {
+                    self.__setNote(0);
+                    self.__cancelNote();
+                    self.__checkSoundPlaying();
+                    callback();
+                }
+            }, timeout);
+            self.timeouts.push(self.noteTimer2);
+            self.__runSound(0);
+            self.__checkSoundPlaying();
+        } else {
+            self.__setNote(0);
+            self.__runSound(0);
+            self.__checkSoundPlaying();
+            callback();
+        }
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.restBeat = function(script) {
+    this.__setModule();
+    const self = this;
+    if (!script.isStart) {
+        script.isStart = true;
+        script.isMoving = true;
+        const motoring = self.motoring;
+        self.__cancelNote();
+        self.__cancelSound();
+
+        const beat = parseFloat(script.getNumberValue('BEAT'));
+        const callback = () => {
+            script.isMoving = false;
+        };
+        motoring.buzzer = 0;
+        self.__setNote(0);
+        self.__runSound(0);
+        if (beat && beat > 0 && self.tempo > 0) {
+            const id = self.__issueNoteId();
+            self.noteTimer1 = setTimeout(() => {
+                if (self.noteId == id) {
+                    self.__cancelNote();
+                    self.__checkSoundPlaying();
+                    callback();
+                }
+            }, (beat * 60 * 1000) / self.tempo);
+            self.timeouts.push(self.noteTimer1);
+            self.__checkSoundPlaying();
+            self.resting = true;
+        } else {
+            self.__checkSoundPlaying();
+            callback();
+        }
+        return script;
+    } else if (script.isMoving) {
+        return script;
+    } else {
+        delete script.isStart;
+        delete script.isMoving;
+        Entry.engine.isContinue = false;
+        return script.callReturn();
+    }
+};
+
+PioRobot.prototype.changeTempo = function(script) {
+    this.__setModule();
+    const bpm = parseFloat(script.getNumberValue('BPM'));
+    if (typeof bpm == 'number') {
+        this.tempo += bpm;
+        if (this.tempo < 1) this.tempo = 1;
+    }
+    return script.callReturn();
+};
+
+PioRobot.prototype.setTempo = function(script) {
+    this.__setModule();
+    const bpm = parseFloat(script.getNumberValue('BPM'));
+    if (typeof bpm == 'number') {
+        this.tempo = bpm;
+        if (this.tempo < 1) this.tempo = 1;
+    }
+    return script.callReturn();
+};
+
+PioRobot.prototype.isSoundPlaying = function(script) {
+    return this.sounding || this.buzzing || this.noting || this.resting;
+};
+
+// -------------------- block methods (sensing) --------------------
+
+PioRobot.prototype.getButton = function(script) {
+    const index = this.__BUTTON_INDEX[script.getField('BUTTON')];
+    if (typeof index == 'number') {
+        return this.buttons[index];
+    }
+    return 0;
+};
+
+PioRobot.prototype.getSignalStrength = function(script) {
+    return this.sensory.signalStrength;
+};
+
+PioRobot.prototype.checkButtonState = function(script) {
+    const index = this.__BUTTON_INDEX[script.getField('BUTTON')];
+    const state = script.getField('STATE');
+    if (typeof index == 'number') {
+        switch (state) {
+            case 'PRESSED':
+                return this.buttonCheckers[index].isPressed();
+            case 'RELEASED':
+                return this.buttonCheckers[index].isReleased();
+            case 'LONG_PRESSED':
+                return this.buttonCheckers[index].isLongPressed();
+            case 'CLICKED':
+                return this.buttonCheckers[index].isClicked();
+        }
+    }
+    return false;
+};
+
+PioRobot.prototype.isButtonState = function(script) {
+    const index = this.__BUTTON_INDEX[script.getField('BUTTON')];
+    const state = script.getField('STATE');
+    if (typeof index == 'number') {
+        switch (state) {
+            case 'PRESSED':
+                return this.buttons[index] == 1;
+            case 'RELEASED':
+                return this.buttons[index] == 0;
+            case 'LONG_PRESSED':
+                return this.buttonCheckers[index].isLongPressed();
+            case 'CLICKED':
+                return this.buttonCheckers[index].isClicked();
+        }
+    }
+    return false;
+};
+
+PioRobot.prototype.checkBatteryState = function(script) {
+    return this.sensory.batteryState == this.__BATTERY_STATES[script.getField('BATTERY')];
+};
+
+PioRobot.prototype.isCharging = function(script) {
+    return this.sensory.chargeState == 1;
+};
+
+PioRobot.prototype.hasButtonEvent = function() {
+    for (let i = 0; i < 8; ++i) {
+        const checker = this.buttonCheckers[i];
+        if (
+            checker.isPressed() ||
+            checker.isReleased() ||
+            checker.isClicked() ||
+            checker.isLongPressed()
+        ) {
+            return true;
+        }
+    }
+    return false;
+};
+
 Entry.Robomation = {
     robots: {},
     robotsByGroup: {},
@@ -13270,6 +14755,13 @@ Entry.Robomation = {
                 group = 'line';
                 module = 'sally';
                 break;
+            case 0x20:
+                // Pio: roboid 핸드셰이크로 확인한 장치 모델 바이트
+                // (PioConnectionChecker는 info[2] === '20'을 요구). entry-hw는
+                // portData에 회사 0x02 / 모델 0x20을 실어 보낸다.
+                group = 'pio';
+                module = 'pio';
+                break;
             case 0xff:
                 group = pd.group;
                 module = pd.module;
@@ -13293,6 +14785,8 @@ Entry.Robomation = {
                     robot = new LineRobot(index, module);
                 } else if (module == 'sally') {
                     robot = new LineRobot(index, module);
+                } else if (module == 'pio') {
+                    robot = new PioRobot(index);
                 }
                 if (robot) {
                     this.robots[key] = robot;
