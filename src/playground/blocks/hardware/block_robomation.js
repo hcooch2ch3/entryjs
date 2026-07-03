@@ -15039,6 +15039,9 @@ RaccoonRobot.prototype.__checkJointMode = function(mode) {
 };
 
 RaccoonRobot.prototype.__setJointVelocity = function(joint, vel) {
+    // 전체 관절 기본 분기는 명시적 ALL(-1) 센티널 전용이다. 알 수 없는 드롭다운
+    // 값(손상된 프로젝트나 OPT_JOINT 불일치)이 네 관절을 모두 움직여선 안 된다.
+    if (joint === undefined) return;
     let motoringVel;
     if (vel == 127) {
         motoringVel = 127;
@@ -15100,6 +15103,7 @@ RaccoonRobot.prototype.__setFourJointVelocities = function(vel1, vel2, vel3, vel
 };
 
 RaccoonRobot.prototype.__changeJointVelocity = function(joint, vel) {
+    if (joint === undefined) return; // __setJointVelocity 참고
     if (joint >= 1 && joint <= 4) {
         const cache = ['jointVelocity1', 'jointVelocity2', 'jointVelocity3', 'jointVelocity4'][
             joint - 1
