@@ -20,6 +20,9 @@ Entry.Raccoon = {
         if (robot && robot.hasButtonEvent && robot.hasButtonEvent()) {
             Entry.engine.fireEvent('raccoonWhenButtonState');
         }
+        if (robot && robot.hasConveyorButtonEvent && robot.hasConveyorButtonEvent()) {
+            Entry.engine.fireEvent('raccoonConveyorWhenButtonState');
+        }
     },
     afterSend(sq) {
         Entry.Robomation.afterSend(sq);
@@ -139,6 +142,14 @@ Entry.Raccoon.setLanguage = () => ({
             raccoon_button_state: '%1 버튼을 %2?',
             raccoon_battery_state: '배터리 %1?',
             raccoon_charging: '충전 중?',
+            raccoon_conveyor_move: '컨베이어 %1 % 속도로 %2 %3 이동하기 %4',
+            raccoon_conveyor_change_velocity: '컨베이어 속도를 %1 만큼 바꾸기 %2',
+            raccoon_conveyor_set_velocity: '컨베이어 속도를 %1 %로 정하기 %2',
+            raccoon_conveyor_stop: '컨베이어 정지하기 %1',
+            raccoon_conveyor_moving: '컨베이어 움직이는 중인가?',
+            raccoon_conveyor_button: '컨베이어 버튼',
+            raccoon_conveyor_when_button_state: '%1 컨베이어 버튼을 %2 때',
+            raccoon_conveyor_button_state: '컨베이어 버튼을 %1?',
         },
         Blocks: {
             raccoon_joint_1: '1번째',
@@ -208,6 +219,10 @@ Entry.Raccoon.setLanguage = () => ({
             raccoon_sensor_encoder2: '2번째 관절 각도',
             raccoon_sensor_encoder3: '3번째 관절 각도',
             raccoon_sensor_encoder4: '4번째 관절 각도',
+            raccoon_conveyor_unit_cm: 'cm',
+            raccoon_conveyor_unit_mm: 'mm',
+            raccoon_conveyor_unit_inches: '인치',
+            raccoon_conveyor_unit_seconds: '초',
         },
     },
     en: {
@@ -280,6 +295,14 @@ Entry.Raccoon.setLanguage = () => ({
             raccoon_button_state: '%1 button %2?',
             raccoon_battery_state: 'battery %1?',
             raccoon_charging: 'charging?',
+            raccoon_conveyor_move: 'move conveyor %2 %3 at %1 % speed %4',
+            raccoon_conveyor_change_velocity: 'change conveyor velocity by %1 %2',
+            raccoon_conveyor_set_velocity: 'set conveyor velocity to %1 % %2',
+            raccoon_conveyor_stop: 'stop conveyor %1',
+            raccoon_conveyor_moving: 'conveyor moving?',
+            raccoon_conveyor_button: 'conveyor button',
+            raccoon_conveyor_when_button_state: '%1 when conveyor button %2',
+            raccoon_conveyor_button_state: 'conveyor button %1?',
         },
         Blocks: {
             raccoon_joint_1: 'joint 1',
@@ -349,6 +372,10 @@ Entry.Raccoon.setLanguage = () => ({
             raccoon_sensor_encoder2: 'joint 2 angle',
             raccoon_sensor_encoder3: 'joint 3 angle',
             raccoon_sensor_encoder4: 'joint 4 angle',
+            raccoon_conveyor_unit_cm: 'cm',
+            raccoon_conveyor_unit_mm: 'mm',
+            raccoon_conveyor_unit_inches: 'inches',
+            raccoon_conveyor_unit_seconds: 'seconds',
         },
     },
     jp: {
@@ -416,6 +443,14 @@ Entry.Raccoon.setLanguage = () => ({
             raccoon_button_state: '%1 ボタンを %2?',
             raccoon_battery_state: '電池充電が %1?',
             raccoon_charging: '充電中?',
+            raccoon_conveyor_move: 'コンベヤーを %1 %速度に %2 %3 移動する %4',
+            raccoon_conveyor_change_velocity: 'コンベヤーの速さを %1 ずつ変える %2',
+            raccoon_conveyor_set_velocity: 'コンベヤーの速さを %1 %にする %2',
+            raccoon_conveyor_stop: 'コンベヤーを停止する %1',
+            raccoon_conveyor_moving: 'コンベヤーを動かしているか?',
+            raccoon_conveyor_button: 'コンベヤーボタン',
+            raccoon_conveyor_when_button_state: '%1 コンベヤーボタンを %2 とき',
+            raccoon_conveyor_button_state: 'コンベヤーボタンを %1?',
         },
         Blocks: {
             raccoon_joint_1: '1番目',
@@ -485,6 +520,10 @@ Entry.Raccoon.setLanguage = () => ({
             raccoon_sensor_encoder2: '2番目の関節角度',
             raccoon_sensor_encoder3: '3番目の関節角度',
             raccoon_sensor_encoder4: '4番目の関節角度',
+            raccoon_conveyor_unit_cm: 'cm',
+            raccoon_conveyor_unit_mm: 'mm',
+            raccoon_conveyor_unit_inches: 'インチ',
+            raccoon_conveyor_unit_seconds: '秒',
         },
     },
     vn: {
@@ -557,6 +596,14 @@ Entry.Raccoon.setLanguage = () => ({
             raccoon_button_state: '%1 button %2?',
             raccoon_battery_state: 'battery %1?',
             raccoon_charging: 'charging?',
+            raccoon_conveyor_move: 'move conveyor %2 %3 at %1 % speed %4',
+            raccoon_conveyor_change_velocity: 'change conveyor velocity by %1 %2',
+            raccoon_conveyor_set_velocity: 'set conveyor velocity to %1 % %2',
+            raccoon_conveyor_stop: 'stop conveyor %1',
+            raccoon_conveyor_moving: 'conveyor moving?',
+            raccoon_conveyor_button: 'conveyor button',
+            raccoon_conveyor_when_button_state: '%1 when conveyor button %2',
+            raccoon_conveyor_button_state: 'conveyor button %1?',
         },
         Blocks: {
             raccoon_joint_1: 'joint 1',
@@ -626,6 +673,10 @@ Entry.Raccoon.setLanguage = () => ({
             raccoon_sensor_encoder2: 'joint 2 angle',
             raccoon_sensor_encoder3: 'joint 3 angle',
             raccoon_sensor_encoder4: 'joint 4 angle',
+            raccoon_conveyor_unit_cm: 'cm',
+            raccoon_conveyor_unit_mm: 'mm',
+            raccoon_conveyor_unit_inches: 'inches',
+            raccoon_conveyor_unit_seconds: 'seconds',
         },
     },
 });
@@ -690,6 +741,14 @@ Entry.Raccoon.blockMenuBlocks = [
     'raccoon_button_state',
     'raccoon_battery_state',
     'raccoon_charging',
+    'raccoon_conveyor_move',
+    'raccoon_conveyor_change_velocity',
+    'raccoon_conveyor_set_velocity',
+    'raccoon_conveyor_stop',
+    'raccoon_conveyor_moving',
+    'raccoon_conveyor_button',
+    'raccoon_conveyor_when_button_state',
+    'raccoon_conveyor_button_state',
 ];
 
 Entry.Raccoon.getBlocks = function() {
@@ -820,6 +879,13 @@ Entry.Raccoon.getBlocks = function() {
         [Lang.Blocks.raccoon_battery_normal, 'NORMAL'],
         [Lang.Blocks.raccoon_battery_low, 'LOW'],
         [Lang.Blocks.raccoon_battery_empty, 'EMPTY'],
+    ];
+
+    const OPT_CONVEYOR_UNIT = [
+        [Lang.Blocks.raccoon_conveyor_unit_cm, 'CM'],
+        [Lang.Blocks.raccoon_conveyor_unit_mm, 'MM'],
+        [Lang.Blocks.raccoon_conveyor_unit_inches, 'INCHES'],
+        [Lang.Blocks.raccoon_conveyor_unit_seconds, 'SECONDS'],
     ];
 
     const command = (type, params, def, paramsKeyMap, klass, method) => ({
@@ -1401,6 +1467,95 @@ Entry.Raccoon.getBlocks = function() {
             {},
             'raccoon_sensor',
             'isCharging'
+        ),
+        // -------- conveyor (peripheral on the raccoon connection) --------
+        raccoon_conveyor_move: command(
+            'raccoon_conveyor_move',
+            [numberInput(), numberInput(), dropdown(OPT_CONVEYOR_UNIT, 'CM'), indicator()],
+            [text('100'), text('10'), null, null],
+            { SPEED: 0, VALUE: 1, UNIT: 2 },
+            'raccoon_conveyor',
+            'conveyorMove'
+        ),
+        raccoon_conveyor_change_velocity: command(
+            'raccoon_conveyor_change_velocity',
+            [numberInput(), indicator()],
+            [text('10'), null],
+            { VELOCITY: 0 },
+            'raccoon_conveyor',
+            'conveyorChangeVelocity'
+        ),
+        raccoon_conveyor_set_velocity: command(
+            'raccoon_conveyor_set_velocity',
+            [numberInput(), indicator()],
+            [text('0'), null],
+            { VELOCITY: 0 },
+            'raccoon_conveyor',
+            'conveyorSetVelocity'
+        ),
+        raccoon_conveyor_stop: command(
+            'raccoon_conveyor_stop',
+            [indicator()],
+            [null],
+            {},
+            'raccoon_conveyor',
+            'conveyorStop'
+        ),
+        raccoon_conveyor_moving: booleanField(
+            'raccoon_conveyor_moving',
+            [],
+            [],
+            {},
+            'raccoon_conveyor',
+            'isConveyorMoving'
+        ),
+        raccoon_conveyor_button: stringField(
+            'raccoon_conveyor_button',
+            [],
+            [],
+            {},
+            'raccoon_conveyor',
+            'getConveyorButton'
+        ),
+        raccoon_conveyor_when_button_state: {
+            color: HW,
+            outerLine: HW_LINE,
+            fontColor: '#fff',
+            skeleton: 'basic_event',
+            statements: [],
+            params: [
+                {
+                    type: 'Indicator',
+                    img: 'block_icon/start_icon_hardware.svg',
+                    size: 14,
+                    position: { x: 0, y: -2 },
+                },
+                dropdown(OPT_WHEN_STATE, 'PRESSED'),
+            ],
+            events: {},
+            def: {
+                params: [null, null],
+                type: 'raccoon_conveyor_when_button_state',
+            },
+            paramsKeyMap: { DUMMY: 0, STATE: 1 },
+            event: 'raccoonConveyorWhenButtonState',
+            class: 'raccoon_conveyor',
+            isNotFor: ['raccoon'],
+            func(sprite, script) {
+                const robot = Entry.Raccoon.getRobot();
+                if (robot && robot.checkConveyorButtonEvent(script)) {
+                    return script.callReturn();
+                }
+                return this.die();
+            },
+        },
+        raccoon_conveyor_button_state: booleanField(
+            'raccoon_conveyor_button_state',
+            [dropdown(OPT_BUTTON_STATE, 'PRESSED')],
+            [null],
+            { STATE: 0 },
+            'raccoon_conveyor',
+            'isConveyorButtonState'
         ),
     };
 };

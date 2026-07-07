@@ -14820,6 +14820,33 @@ function RaccoonRobot(index) {
     this.joints = [0, 0, 0, 0];
     this.gripper = { type: -1, state: -1 };
     this.extType = 0;
+    // 컨베이어 주변장치. 라쿤 SLOT1 채널을 사용한다.
+    // 바이트 계층(slotW1/slotR1)은 entry-hw raccoon.js에 있다.
+    this.conveyor = {
+        motoring: { mode: 0, velocity: 0, distanceId: 0, distance: 0 },
+        sensory: {
+            mode: 0,
+            velocity: 0,
+            distance: 0,
+            button: 0,
+            clickedId: 0,
+            longPressedId: 0,
+            stateId: 0,
+            moving: 0,
+        },
+        clickedId: -1,
+        longPressedId: -1,
+        stateId: -1,
+        distanceCallback: undefined,
+        movingId: 0,
+        movingTimer: undefined,
+        moving: false,
+        button: 0,
+        pressed: false,
+        released: false,
+        clicked: false,
+        longPressed: false,
+    };
     this.timeouts = [];
 }
 
@@ -14838,6 +14865,7 @@ RaccoonRobot.prototype.REF_NONE = 0;
 RaccoonRobot.prototype.REF_WRIST = 1;
 RaccoonRobot.prototype.REF_GRIPPER = 2;
 RaccoonRobot.prototype.__INCH_TO_CM = 2.54;
+RaccoonRobot.prototype.__MM_TO_CM = 0.1;
 RaccoonRobot.prototype.__RESET_TIMEOUT_MS = 3000;
 RaccoonRobot.prototype.__SOUND_TIMEOUT_MS = 10000;
 
@@ -14940,6 +14968,7 @@ RaccoonRobot.prototype.setZero = function() {
     this.extType = 0;
     this.__removeAllTimeouts();
     this.__resetGripper();
+    this.__resetConveyor();
     this.__resetPose();
 };
 
@@ -14985,6 +15014,11 @@ RaccoonRobot.prototype.clearEvent = function() {
     this.collided2 = false;
     this.collided3 = false;
     this.collided4 = false;
+    const conveyor = this.conveyor;
+    conveyor.pressed = false;
+    conveyor.released = false;
+    conveyor.clicked = false;
+    conveyor.longPressed = false;
 };
 
 RaccoonRobot.prototype.__removeTimeout = function(id) {
@@ -15553,8 +15587,11 @@ RaccoonRobot.prototype.handleSensory = function() {
         const t = sensory.slotR1Id;
         if (t != this.slotR1Id) {
             if (sensory.slotR1 !== undefined) {
-                // (delta b) conveyor handling removed; extType is kept
-                this.extType = sensory.slotR1[0] & 0x0f;
+                const type = sensory.slotR1[0] & 0x0f;
+                this.extType = type;
+                if (type == 1) {
+                    this.__conveyorHandleSensory(sensory.slotR1);
+                }
             }
             this.slotR1Id = t;
         }
@@ -15871,6 +15908,282 @@ RaccoonRobot.prototype.__moveToXyzUntil = function(wait, x, y, z, callback) {
 };
 
 // ---------------- Entry block methods ----------------
+
+// ---------------- conveyor peripheral ----------------
+
+RaccoonRobot.prototype.__conveyorIssueDistance = function() {
+    this.conveyor.motoring.distanceId = (this.conveyor.motoring.distanceId % 255) + 1;
+};
+
+RaccoonRobot.prototype.__conveyorCancelDistance = function() {
+    this.conveyor.distanceCallback = undefined;
+};
+
+RaccoonRobot.prototype.__conveyorIssueMoving = function() {
+    this.conveyor.movingId = this.blockId = (this.blockId % 65535) + 1;
+    return this.conveyor.movingId;
+};
+
+RaccoonRobot.prototype.__conveyorCancelMoving = function() {
+    const conveyor = this.conveyor;
+    conveyor.movingId = 0;
+    if (conveyor.movingTimer !== undefined) {
+        this.__removeTimeout(conveyor.movingTimer);
+    }
+    conveyor.movingTimer = undefined;
+};
+
+RaccoonRobot.prototype.__conveyorCheckMoving = function() {
+    this.conveyor.moving = this.conveyor.motoring.velocity != 0;
+};
+
+RaccoonRobot.prototype.__conveyorUpdate = function() {
+    const sw1 = this.motoring.slotW1;
+    const conveyorMotoring = this.conveyor.motoring;
+    sw1[0] = 0x11;
+    sw1[1] = conveyorMotoring.mode;
+    sw1[2] = conveyorMotoring.velocity;
+    sw1[3] = conveyorMotoring.distanceId;
+    sw1[4] = (conveyorMotoring.distance >> 8) & 0xff;
+    sw1[5] = conveyorMotoring.distance & 0xff;
+    for (let i = 6; i < 8; ++i) {
+        sw1[i] = 0;
+    }
+    this.__issueSlotW1();
+};
+
+RaccoonRobot.prototype.__conveyorHandleSensory = function(slotR1) {
+    const conveyor = this.conveyor;
+    const conveyorSensory = conveyor.sensory;
+    conveyorSensory.mode = slotR1[1] & 0xff;
+    conveyorSensory.distance = ((slotR1[2] & 0xff) << 8) | (slotR1[3] & 0xff);
+    conveyorSensory.button = slotR1[4] & 0x01;
+    conveyorSensory.clickedId = (slotR1[4] >> 1) & 0x03;
+    conveyorSensory.longPressedId = (slotR1[4] >> 3) & 0x03;
+    conveyorSensory.moving = slotR1[5] & 0x01;
+    conveyorSensory.stateId = (slotR1[5] >> 1) & 0x03;
+    conveyorSensory.velocity = slotR1[6];
+
+    if (conveyorSensory.button != conveyor.button) {
+        if (conveyor.button == 0 && conveyorSensory.button == 1) conveyor.pressed = true;
+        else if (conveyor.button == 1 && conveyorSensory.button == 0) conveyor.released = true;
+        conveyor.button = conveyorSensory.button;
+    }
+    if (conveyorSensory.clickedId != conveyor.clickedId) {
+        if (conveyor.clickedId != -1) conveyor.clicked = true;
+        conveyor.clickedId = conveyorSensory.clickedId;
+    }
+    if (conveyorSensory.longPressedId != conveyor.longPressedId) {
+        if (conveyor.longPressedId != -1) conveyor.longPressed = true;
+        conveyor.longPressedId = conveyorSensory.longPressedId;
+    }
+    if (conveyorSensory.stateId !== undefined) {
+        const t = conveyorSensory.stateId;
+        if (t != conveyor.stateId) {
+            if (conveyor.stateId != -1 && conveyor.distanceCallback) {
+                const callback = conveyor.distanceCallback;
+                this.__conveyorCancelDistance();
+                conveyor.motoring.mode = 0;
+                conveyor.motoring.velocity = 0;
+                this.__conveyorCheckMoving();
+                if (callback) callback();
+            }
+            conveyor.stateId = t;
+        }
+    }
+};
+
+RaccoonRobot.prototype.__conveyorStopInternal = function() {
+    this.__conveyorCancelDistance();
+    this.__conveyorCancelMoving();
+    const conveyorMotoring = this.conveyor.motoring;
+    conveyorMotoring.mode = 0;
+    conveyorMotoring.velocity = 0;
+    this.__conveyorUpdate();
+    this.__conveyorCheckMoving();
+};
+
+RaccoonRobot.prototype.__resetConveyor = function() {
+    this.__conveyorStopInternal();
+    const conveyor = this.conveyor;
+    const conveyorMotoring = conveyor.motoring;
+    conveyorMotoring.mode = 0;
+    conveyorMotoring.velocity = 0;
+    conveyorMotoring.distance = 0;
+    const conveyorSensory = conveyor.sensory;
+    conveyorSensory.mode = 0;
+    conveyorSensory.velocity = 0;
+    conveyorSensory.distance = 0;
+    conveyorSensory.button = 0;
+    conveyorSensory.clickedId = 0;
+    conveyorSensory.longPressedId = 0;
+    conveyorSensory.stateId = 0;
+    conveyorSensory.moving = 0;
+    conveyor.clickedId = -1;
+    conveyor.longPressedId = -1;
+    conveyor.stateId = -1;
+    conveyor.distanceCallback = undefined;
+    conveyor.movingId = 0;
+    conveyor.movingTimer = undefined;
+    conveyor.moving = false;
+    conveyor.button = 0;
+    conveyor.pressed = false;
+    conveyor.released = false;
+    conveyor.clicked = false;
+    conveyor.longPressed = false;
+};
+
+// 단위 값은 Entry 드롭다운의 대문자 값이다(CM/MM/INCHES/SECONDS).
+RaccoonRobot.prototype.__conveyorMoveInternal = function(value, unit, speed, callback) {
+    this.__conveyorCancelDistance();
+    this.__conveyorCancelMoving();
+    const conveyorMotoring = this.conveyor.motoring;
+    value = parseFloat(value);
+    speed = parseFloat(speed);
+    if (!isNaN(value) && !isNaN(speed) && value != 0 && speed != 0) {
+        if (speed < -100) speed = -100;
+        else if (speed > 100) speed = 100;
+        if (unit == 'SECONDS') {
+            const id = this.__conveyorIssueMoving();
+            conveyorMotoring.mode = 0;
+            conveyorMotoring.velocity = speed;
+            const timer = setTimeout(() => {
+                if (this.conveyor.movingId == id) {
+                    conveyorMotoring.mode = 0;
+                    conveyorMotoring.velocity = 0;
+                    this.__conveyorUpdate();
+                    this.__conveyorCancelMoving();
+                    this.__conveyorCheckMoving();
+                    callback();
+                }
+            }, value * 1000);
+            this.conveyor.movingTimer = timer;
+            this.timeouts.push(timer);
+            this.__conveyorUpdate();
+            this.__conveyorCheckMoving();
+        } else {
+            if (unit == 'MM') {
+                value *= this.__MM_TO_CM;
+            } else if (unit == 'INCHES') {
+                value *= this.__INCH_TO_CM;
+            }
+            if (value < 0) {
+                value = -value;
+                speed = -speed;
+            }
+            conveyorMotoring.mode = 1;
+            // 장치 WRITE_DISTANCE 범위 [0,65535]로 클램프 후 내림한다. entry-hw
+            // _copySlot은 바이트 단위로만 클램프하므로 오버플로를 여기서 막아야 한다.
+            // value는 위에서 이미 음수가 아니게 처리됐다.
+            let dist = Math.floor(value * 100);
+            if (dist < 0) dist = 0;
+            else if (dist > 65535) dist = 65535;
+            conveyorMotoring.distance = dist;
+            conveyorMotoring.velocity = speed;
+            this.conveyor.distanceCallback = callback;
+            this.__conveyorIssueDistance();
+            this.__conveyorUpdate();
+            this.__conveyorCheckMoving();
+        }
+    } else {
+        conveyorMotoring.mode = 0;
+        conveyorMotoring.velocity = 0;
+        this.__conveyorUpdate();
+        this.__conveyorCheckMoving();
+        callback();
+    }
+};
+
+RaccoonRobot.prototype.conveyorMove = function(script) {
+    return this.__waitBlock(script, (cb) => {
+        this.__conveyorMoveInternal(
+            script.getNumberValue('VALUE'),
+            script.getField('UNIT'),
+            script.getNumberValue('SPEED'),
+            cb
+        );
+    });
+};
+
+RaccoonRobot.prototype.conveyorChangeVelocity = function(script) {
+    this.__setModule();
+    this.__conveyorCancelDistance();
+    this.__conveyorCancelMoving();
+    const conveyorMotoring = this.conveyor.motoring;
+    conveyorMotoring.mode = 0;
+    let velocity = parseFloat(script.getNumberValue('VELOCITY'));
+    if (!isNaN(velocity)) {
+        velocity += conveyorMotoring.velocity;
+        if (velocity < -100) velocity = -100;
+        else if (velocity > 100) velocity = 100;
+        conveyorMotoring.velocity = velocity;
+        this.__conveyorUpdate();
+    }
+    this.__conveyorCheckMoving();
+    return script.callReturn();
+};
+
+RaccoonRobot.prototype.conveyorSetVelocity = function(script) {
+    this.__setModule();
+    this.__conveyorCancelDistance();
+    this.__conveyorCancelMoving();
+    const conveyorMotoring = this.conveyor.motoring;
+    conveyorMotoring.mode = 0;
+    let velocity = parseFloat(script.getNumberValue('VELOCITY'));
+    if (!isNaN(velocity)) {
+        if (velocity < -100) velocity = -100;
+        else if (velocity > 100) velocity = 100;
+        conveyorMotoring.velocity = velocity;
+        this.__conveyorUpdate();
+    }
+    this.__conveyorCheckMoving();
+    return script.callReturn();
+};
+
+RaccoonRobot.prototype.conveyorStop = function(script) {
+    this.__setModule();
+    this.__conveyorStopInternal();
+    return script.callReturn();
+};
+
+RaccoonRobot.prototype.isConveyorMoving = function(script) {
+    return this.conveyor.sensory.moving == 1;
+};
+
+RaccoonRobot.prototype.getConveyorButton = function(script) {
+    return this.conveyor.sensory.button;
+};
+
+RaccoonRobot.prototype.__conveyorButtonEventFlag = function(state) {
+    const conveyor = this.conveyor;
+    switch (state) {
+        case 'PRESSED':
+            return conveyor.pressed;
+        case 'RELEASED':
+            return conveyor.released;
+        case 'CLICKED':
+            return conveyor.clicked;
+        case 'LONG_PRESSED':
+            return conveyor.longPressed;
+    }
+    return false;
+};
+
+RaccoonRobot.prototype.hasConveyorButtonEvent = function() {
+    const conveyor = this.conveyor;
+    return conveyor.pressed || conveyor.released || conveyor.clicked || conveyor.longPressed;
+};
+
+RaccoonRobot.prototype.checkConveyorButtonEvent = function(script) {
+    return this.__conveyorButtonEventFlag(script.getField('STATE'));
+};
+
+RaccoonRobot.prototype.isConveyorButtonState = function(script) {
+    const state = script.getField('STATE');
+    if (state == 'PRESSED') return this.conveyor.sensory.button == 1;
+    if (state == 'RELEASED') return this.conveyor.sensory.button == 0;
+    return this.__conveyorButtonEventFlag(state);
+};
 
 RaccoonRobot.prototype.__waitBlock = function(script, starter) {
     this.__setModule();
