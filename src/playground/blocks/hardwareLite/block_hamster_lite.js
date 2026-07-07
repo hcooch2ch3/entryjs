@@ -345,6 +345,9 @@
             this.ioTimer = undefined;
             this.tempo = 60;
             this.timeouts = [];
+            this.invalidFrameCount = 0;
+            this.pendingIdentity = undefined;
+            this.pendingIdentityTtl = 0;
 
             this.__removeAllTimeouts();
             if (Entry.hwLite && Entry.hwLite.serial) {
@@ -6104,6 +6107,39 @@
 
         handleLocalData(data) {
             // data: string
+            const identity = this.parseIdentityData(data);
+            if (identity) {
+                // 연결 유지 중 동글의 페어링 로봇이 바뀌면 정체 라인이 다시 온다.
+                // 1회성 라인(노이즈)으로 주행 중 정지하지 않도록 동일 정체 2회 확인 후 전환한다.
+                if (identity.isHamsterS !== this.isHamsterS || identity.address !== this.address) {
+                    var pending = this.pendingIdentity;
+                    if (
+                        pending &&
+                        pending.isHamsterS === identity.isHamsterS &&
+                        pending.address === identity.address
+                    ) {
+                        this.pendingIdentity = undefined;
+                        this.setRobotIdentity(identity);
+                        // 현장 디버깅 breadcrumb: 세션 중 재식별은 "로봇이 갑자기 멈춤"의 원인 후보
+                        console.info('HamsterLite: runtime robot identity switch', identity);
+                        // 주의: setZero()는 Entry.hwLite.serial.update()를 통해
+                        // 새 정체 기준의 정지 패킷을 즉시 1회 write한다(의도된 동작).
+                        this.setZero();
+                    } else {
+                        this.pendingIdentity = identity;
+                        // 근접 창: 확인 사이팅이 이 프레임 수 안에 오지 않으면 보류를 폐기한다.
+                        // 시간상 무관한 산발적 외부 정체 2회가 오전환을 만드는 것을 방지(약 2초).
+                        this.pendingIdentityTtl = 60;
+                    }
+                } else {
+                    this.pendingIdentity = undefined;
+                }
+                this.invalidFrameCount = 0;
+                return;
+            }
+            if (this.pendingIdentity && --this.pendingIdentityTtl <= 0) {
+                this.pendingIdentity = undefined;
+            }
             if (data?.length != 53) {
                 return;
             }
@@ -6111,7 +6147,11 @@
             if (this.isHamsterS) {
                 var str = data.slice(0, 1);
                 var value = parseInt(str, 16);
-                if (value != 1) return; // invalid data
+                if (value != 1) {
+                    this.reportInvalidFrame();
+                    return;
+                }
+                this.invalidFrameCount = 0;
 
                 var sensory = this.sensory;
                 // left proximity
@@ -6209,7 +6249,11 @@
             } else {
                 var str = data.slice(4, 5);
                 var value = parseInt(str, 16);
-                if (value != 1) return; // invalid data
+                if (value != 1) {
+                    this.reportInvalidFrame();
+                    return;
+                }
+                this.invalidFrameCount = 0;
 
                 var sensory = this.sensory;
                 // signal strength
@@ -6352,6 +6396,24 @@
         setRobotIdentity(identity) {
             this.isHamsterS = identity.isHamsterS;
             this.address = identity.address;
+        }
+
+        // 검증 실패 프레임이 연속되면 로봇/모드 불일치 가능성이 높다 → 정체를 다시 묻는다.
+        // 스트림 약 30fps 기준 1초 연속 불일치에서 1회 발화.
+        // (크로스모드 스왑의 총 전환 지연은 프로브 2회 확인 구조라 약 2~3초)
+        reportInvalidFrame() {
+            this.invalidFrameCount = (this.invalidFrameCount || 0) + 1;
+            if (this.invalidFrameCount >= 30) {
+                this.invalidFrameCount = 0;
+                try {
+                    if (Entry.hwLite && Entry.hwLite.serial) {
+                        Entry.hwLite.serial.sendAsciiAsBuffer(this.requestInitialData());
+                    }
+                } catch (error) {
+                    // teardown 창에서 writer가 이미 해제된 경우 — 프로브는 최선노력이라 무시
+                    console.error(error);
+                }
+            }
         }
 
         async initialHandshake() {

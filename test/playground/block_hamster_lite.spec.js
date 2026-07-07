@@ -183,3 +183,92 @@ describe('initialHandshake', () => {
         expect(serial.sendAsciiAsBuffer).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('handleLocalData 런타임 재식별 (연결 유지 중 로봇 교체)', () => {
+    let hamster;
+    let serial;
+    beforeEach(() => {
+        hamster = loadModule();
+        serial = createMockSerial([]);
+        global.Entry.hwLite = { serial };
+    });
+
+    test('동일 정체 라인 2회 확인 시 isHamsterS/address 갱신 + setZero', () => {
+        hamster.isHamsterS = false;
+        hamster.address = 'BA4A0461D9DA';
+        hamster.motoring.leftWheel = 50; // 이전 로봇에게 주행 명령 중이었다고 가정
+        hamster.handleLocalData(LINE_S); // 1회차: 보류
+        expect(hamster.isHamsterS).toBe(false);
+        hamster.handleLocalData(LINE_S); // 2회차: 전환
+        expect(hamster.isHamsterS).toBe(true);
+        expect(hamster.address).toBe('FDA3ECEC3AC4');
+        expect(hamster.motoring.leftWheel).toBe(0); // setZero로 구동 상태 리셋
+        expect(serial.update).toHaveBeenCalled(); // 새 정체 기준 정지 패킷 write
+    });
+
+    test('낯선 정체 라인 1회(노이즈)로는 전환도 정지도 하지 않는다', () => {
+        hamster.isHamsterS = false;
+        hamster.address = 'BA4A0461D9DA';
+        hamster.motoring.leftWheel = 50;
+        hamster.handleLocalData(LINE_S); // stray 1회
+        hamster.handleLocalData(`0000${'1'}${'0'.repeat(48)}`); // 구형 유효 프레임
+        expect(hamster.isHamsterS).toBe(false);
+        expect(hamster.motoring.leftWheel).toBe(50); // 정지 없음
+    });
+
+    test('보류된 재식별은 60프레임 내 재확인 없으면 만료된다 (무관한 2회 오전환 방지)', () => {
+        hamster.isHamsterS = false;
+        hamster.address = 'BA4A0461D9DA';
+        hamster.motoring.leftWheel = 50;
+        const goodFrame = `0000${'1'}${'0'.repeat(48)}`;
+        hamster.handleLocalData(LINE_S); // 1회차: 보류
+        for (let i = 0; i < 60; i++) {
+            hamster.handleLocalData(goodFrame); // 60프레임 경과 → 보류 만료
+        }
+        hamster.handleLocalData(LINE_S); // 만료 후라 다시 1회차일 뿐
+        expect(hamster.isHamsterS).toBe(false);
+        expect(hamster.motoring.leftWheel).toBe(50);
+    });
+
+    test('현재와 같은 정체 재수신은 setZero를 부르지 않는다', () => {
+        hamster.isHamsterS = false;
+        hamster.address = 'BA4A0461D9DA';
+        hamster.motoring.leftWheel = 50;
+        hamster.handleLocalData(LINE_OLD);
+        hamster.handleLocalData(LINE_OLD);
+        expect(hamster.motoring.leftWheel).toBe(50);
+    });
+
+    test('검증 실패 프레임 30연속이면 FF 재요청 1회 (S 모드)', () => {
+        hamster.isHamsterS = true;
+        const badFrame = `0${'0'.repeat(52)}`; // S 검증(1번째 자리 1) 실패하는 53자
+        for (let i = 0; i < 29; i++) {
+            hamster.handleLocalData(badFrame);
+        }
+        expect(serial.sendAsciiAsBuffer).not.toHaveBeenCalled();
+        hamster.handleLocalData(badFrame); // 30번째
+        expect(serial.sendAsciiAsBuffer).toHaveBeenCalledTimes(1);
+        expect(serial.sendAsciiAsBuffer).toHaveBeenCalledWith('FF\r');
+    });
+
+    test('검증 실패 프레임 30연속이면 FF 재요청 1회 (구형 모드)', () => {
+        hamster.isHamsterS = false;
+        const badFrame = `0000${'0'.repeat(49)}`; // 구형 검증(5번째 자리 1) 실패하는 53자
+        for (let i = 0; i < 30; i++) {
+            hamster.handleLocalData(badFrame);
+        }
+        expect(serial.sendAsciiAsBuffer).toHaveBeenCalledTimes(1);
+    });
+
+    test('유효 프레임이 오면 카운터가 리셋된다', () => {
+        hamster.isHamsterS = true;
+        const badFrame = `0${'0'.repeat(52)}`;
+        const goodFrame = `1${'0'.repeat(52)}`; // S 검증 통과
+        for (let i = 0; i < 29; i++) {
+            hamster.handleLocalData(badFrame);
+        }
+        hamster.handleLocalData(goodFrame); // 카운터 리셋
+        hamster.handleLocalData(badFrame); // 다시 1부터
+        expect(serial.sendAsciiAsBuffer).not.toHaveBeenCalled();
+    });
+});
