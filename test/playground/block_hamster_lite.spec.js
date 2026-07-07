@@ -74,3 +74,112 @@ describe('parseIdentityData (이름-독립 뒤-인덱스 파싱)', () => {
         expect(hamster.parseIdentityData(undefined)).toBeUndefined();
     });
 });
+
+function createMockSerial(lines) {
+    const queue = [...lines];
+    const pendingReads = [];
+    return {
+        reader: {
+            read: jest.fn(() => {
+                if (queue.length) {
+                    return Promise.resolve({ value: queue.shift(), done: false });
+                }
+                // 데이터 없음 = pending (미페어링 동글).
+                // 실제 Web Streams 계약: reader.cancel()이 pending read를 {done:true}로 settle한다.
+                // removeSerialPort()가 내부에서 cancel하므로 mock도 동일하게 모델링한다.
+                return new Promise((resolve) => pendingReads.push(resolve));
+            }),
+        },
+        sendAsciiAsBuffer: jest.fn(),
+        removeSerialPort: jest.fn(() => {
+            pendingReads.splice(0).forEach((resolve) => resolve({ value: undefined, done: true }));
+            return Promise.resolve();
+        }),
+        update: jest.fn(),
+    };
+}
+
+describe('initialHandshake', () => {
+    let hamster;
+    beforeEach(() => {
+        hamster = loadModule();
+        hamster.handshakeTimeoutMs = 30; // 테스트용 단축 (제품 기본값 5000ms)
+    });
+
+    test('센서 프레임 뒤 구형 정체 라인 → 성공, isHamsterS=false, 포트 정리 안 함', async () => {
+        const serial = createMockSerial([LINE_SENSORY, LINE_OLD]);
+        global.Entry.hwLite = { serial };
+        await expect(hamster.initialHandshake()).resolves.toBe(true);
+        expect(hamster.isHamsterS).toBe(false);
+        expect(hamster.address).toBe('BA4A0461D9DA');
+        expect(serial.removeSerialPort).not.toHaveBeenCalled();
+        // 선제 요청 + 비-FF(센서) 라인 후 재요청
+        expect(serial.sendAsciiAsBuffer).toHaveBeenCalledWith('FF\r');
+    });
+
+    test('햄스터S 정체 라인 → isHamsterS=true', async () => {
+        const serial = createMockSerial([LINE_S]);
+        global.Entry.hwLite = { serial };
+        await expect(hamster.initialHandshake()).resolves.toBe(true);
+        expect(hamster.isHamsterS).toBe(true);
+        expect(hamster.address).toBe('FDA3ECEC3AC4');
+    });
+
+    test('성공해도 this.id는 변이되지 않는다 (재선택 후 저장 시 오염 방지)', async () => {
+        const serial = createMockSerial([LINE_OLD]);
+        global.Entry.hwLite = { serial };
+        await hamster.initialHandshake();
+        expect(hamster.id).toBe('020401');
+    });
+
+    test('정체 라인이 안 오면 타임아웃 → 포트 정리 후 false', async () => {
+        const serial = createMockSerial([]); // read 무한 pending
+        global.Entry.hwLite = { serial };
+        await expect(hamster.initialHandshake()).resolves.toBe(false);
+        expect(serial.removeSerialPort).toHaveBeenCalledTimes(1);
+    });
+
+    test('타임아웃 패자로 남은 pending read는 removeSerialPort(cancel)가 {done:true}로 정리한다', async () => {
+        const serial = createMockSerial([]);
+        global.Entry.hwLite = { serial };
+        await expect(hamster.initialHandshake()).resolves.toBe(false);
+        // pending read가 settle되어 unhandled rejection 없이 종료되는 것 자체가 계약
+        expect(serial.reader.read).toHaveBeenCalled();
+        expect(serial.removeSerialPort).toHaveBeenCalledTimes(1);
+    });
+
+    test('reader done(스트림 종료) → 포트 정리 후 false', async () => {
+        const serial = createMockSerial([]);
+        serial.reader.read = jest.fn(() => Promise.resolve({ value: undefined, done: true }));
+        global.Entry.hwLite = { serial };
+        await expect(hamster.initialHandshake()).resolves.toBe(false);
+        expect(serial.removeSerialPort).toHaveBeenCalled();
+    });
+
+    test('read가 reject(스트림 에러: 연결 중 동글 제거)해도 throw 없이 포트 정리 후 false', async () => {
+        const serial = createMockSerial([]);
+        serial.reader.read = jest.fn(() => Promise.reject(new Error('device yanked')));
+        global.Entry.hwLite = { serial };
+        await expect(hamster.initialHandshake()).resolves.toBe(false);
+        expect(serial.removeSerialPort).toHaveBeenCalledTimes(1);
+    });
+
+    test('프로브 write가 동기 throw해도 포트 정리 후 false', async () => {
+        const serial = createMockSerial([]);
+        serial.sendAsciiAsBuffer = jest.fn(() => {
+            throw new Error('writer is null');
+        });
+        global.Entry.hwLite = { serial };
+        await expect(hamster.initialHandshake()).resolves.toBe(false);
+        expect(serial.removeSerialPort).toHaveBeenCalledTimes(1);
+    });
+
+    test('다른 기종(터틀)만 응답하면 FF 라인엔 재프로브 없이 타임아웃 후 정리', async () => {
+        const serial = createMockSerial([LINE_TURTLE]);
+        global.Entry.hwLite = { serial };
+        await expect(hamster.initialHandshake()).resolves.toBe(false);
+        expect(serial.removeSerialPort).toHaveBeenCalled();
+        // 선제 1회만 — FF-프리픽스 라인에는 재요청하지 않는다(원본 동작 유지)
+        expect(serial.sendAsciiAsBuffer).toHaveBeenCalledTimes(1);
+    });
+});

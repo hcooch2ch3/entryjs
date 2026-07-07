@@ -1,6 +1,9 @@
 'use strict';
 
 (function() {
+    // 연결 시 정체 라인(FF01) 대기 상한. 페어링된 동글은 ms 단위로 응답하므로 5초면 충분.
+    const HANDSHAKE_TIMEOUT_MS = 5000;
+
     const COLOR_TO_RGB = [
         [0, 0, 0],
         [0, 0, 255],
@@ -164,6 +167,7 @@
                 readAscii: true,
                 flowControl: 'hardware',
             };
+            this.handshakeTimeoutMs = HANDSHAKE_TIMEOUT_MS; // 테스트에서 주입 가능
             this.setZero();
         }
 
@@ -6351,36 +6355,52 @@
         }
 
         async initialHandshake() {
-            let status = false;
-            while (true) {
-                const { value: data, done } = await Entry.hwLite.serial.reader.read();
-                if (done) {
-                    return false;
-                }
-                if (data && data.slice(0, 2) == 'FF') {
-                    var info = data.split(/[,\n]+/);
-                    if (info && info.length >= 5) {
-                        if (info[1] == 'Hamster' && info[2] == '04' && info[4].length >= 12) {
-                            this.id = '0204' + info[3];
-                            this.address = info[4].substring(0, 12);
-                            this.isHamsterS = false;
-                            status = true;
-                            break;
-                        } else if (info[2] == '0E' && info[4].length >= 12) {
-                            this.id = '0204' + info[3];
-                            this.address = info[4].substring(0, 12);
-                            this.isHamsterS = true;
-                            status = true;
-                            break;
-                        } else {
-                            break;
-                        }
+            var serial = Entry.hwLite.serial;
+            var identity;
+            var timedOut = false;
+            var timer;
+            var timeoutPromise = new Promise((resolve) => {
+                timer = setTimeout(() => {
+                    timedOut = true;
+                    resolve('timeout');
+                }, this.handshakeTimeoutMs);
+            });
+            try {
+                // 동글이 자발 송출을 안 하는 상태(미페어링 등)에서도 응답을 유도한다.
+                serial.sendAsciiAsBuffer(this.requestInitialData());
+                while (!timedOut) {
+                    // invariant: 반복당 outstanding read는 정확히 1개.
+                    // 타임아웃 패자로 남는 pending read는 removeSerialPort()의 reader.cancel()이
+                    // {done:true}로 settle하므로 누수/unhandled rejection이 없다.
+                    var result = await Promise.race([serial.reader.read(), timeoutPromise]);
+                    if (result === 'timeout' || result.done) {
+                        break;
                     }
-                } else {
-                    Entry.hwLite.serial.sendAsciiAsBuffer(this.requestInitialData());
+                    identity = this.parseIdentityData(result.value);
+                    if (identity) {
+                        break;
+                    }
+                    if (typeof result.value !== 'string' || result.value.slice(0, 2) != 'FF') {
+                        // 원본 동작 유지: FF-프리픽스 라인에는 재요청하지 않는다(프로브 증폭 방지)
+                        serial.sendAsciiAsBuffer(this.requestInitialData());
+                    }
                 }
+            } catch (error) {
+                // 스트림 에러(연결 중 동글 제거 등)로 read가 reject하거나 write가 동기
+                // throw해도 아래 정리 경로로 합류시킨다 — throw로 빠지면 포트 정리가
+                // 건너뛰어져 "실패 시 포트 방치" 결함이 이 창에서 재발한다.
+                console.error(error);
+                identity = undefined;
             }
-            return status;
+            clearTimeout(timer);
+            if (!identity) {
+                // 실패 시 코어(hw_lite.connect catch)는 포트를 닫지 않는다. 열린 포트가 방치되면
+                // 같은 동글은 port.open() InvalidStateError로 새로고침 전까지 재연결 불가 → 모듈이 직접 정리.
+                await serial.removeSerialPort();
+                return false;
+            }
+            this.setRobotIdentity(identity);
+            return true;
         }
     })();
 })();
