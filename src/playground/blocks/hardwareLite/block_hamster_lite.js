@@ -6320,6 +6320,36 @@
             return 'FF\r';
         }
 
+        // 이름 필드는 사용자 임의/다국어 가변값이라 콤마가 섞이면 앞-인덱스가 밀린다.
+        // 종단 CR/LF만 제거하고 콤마로 분리한 뒤 고정 구조(모델/변형/주소)를 뒤에서 집는다.
+        // 실측 포맷: FF01,<이름>,<모델2hex>,<변형2hex>,<주소12hex>
+        parseIdentityData(data) {
+            if (typeof data !== 'string' || data.slice(0, 2) != 'FF') {
+                return undefined;
+            }
+            var info = data.replace(/[\r\n]+$/, '').split(',');
+            if (info.length < 5) {
+                return undefined;
+            }
+            var model = info[info.length - 3];
+            var variant = info[info.length - 2];
+            var address = info[info.length - 1];
+            // 주소는 실측상 항상 정확히 12-hex이며 trailing이 없다. 레거시의
+            // length>=12 + substring(0,12) 관용보다 엄격한 의도적 강화(entry-hw와 동일 정책).
+            if (!/^[0-9A-Fa-f]{2}$/.test(variant) || !/^[0-9A-Fa-f]{12}$/.test(address)) {
+                return undefined;
+            }
+            if (model == '04' || model == '0E') {
+                return { isHamsterS: model == '0E', address: address };
+            }
+            return undefined;
+        }
+
+        setRobotIdentity(identity) {
+            this.isHamsterS = identity.isHamsterS;
+            this.address = identity.address;
+        }
+
         async initialHandshake() {
             let status = false;
             while (true) {
