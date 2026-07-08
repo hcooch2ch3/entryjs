@@ -13330,9 +13330,11 @@ function PioRobot(index) {
         module: 'pio',
         index,
     };
-    this.wheelStateId = -1;
-    this.neckStateId = -1;
-    this.soundStateId = -1;
+    // sensory.*StateId는 0부터 증가하는 카운터이므로 0으로 초기화한다.
+    // -1이면 첫 완료(0->1)가 감지되지 않아 블록 콜백이 실행되지 않는다.
+    this.wheelStateId = 0;
+    this.neckStateId = 0;
+    this.soundStateId = 0;
     this.blockId = 0;
     this.wheelMoving = false;
     this.motionCallback = undefined;
@@ -13403,9 +13405,10 @@ PioRobot.prototype.setZero = function() {
     for (const port in portMap) {
         motoring[port] = portMap[port];
     }
-    this.wheelStateId = -1;
-    this.neckStateId = -1;
-    this.soundStateId = -1;
+    // 센서 카운터 시작값(0)에 맞춘다(-1 아님). 생성자 주석 참고.
+    this.wheelStateId = 0;
+    this.neckStateId = 0;
+    this.soundStateId = 0;
     this.blockId = 0;
     this.wheelMoving = false;
     this.motionCallback = undefined;
@@ -15538,7 +15541,10 @@ RaccoonRobot.prototype.handleSensory = function() {
                 const callback = this.angleCallback;
                 this.__cancelJointAngle();
                 this.__setJointMode(this.__checkJointMode(this.JOINT_MODE_VELOCITY));
-                this.__setJointVelocity(-1, 0);
+                // _release_joints(): velocity(-1, 127). 값 127은 전원 차단/해제
+                // 센티널이다(raccoon.js _verifyVelocity 통과). 0이면 해제가 아니라
+                // 속도 0 유지를 명령하게 된다.
+                this.__setJointVelocity(-1, 127);
                 if (this.resetting) {
                     this.resetting = false;
                     this.__cancelResetTimeout();
