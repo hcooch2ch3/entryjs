@@ -14899,6 +14899,18 @@ RaccoonRobot.prototype.__PORT_MAP = {
     slotW3: [0x30, 0, 0, 0, 0, 0, 0, 0],
 };
 
+// (x % 255) + 1 로 증가하는 명령 id 카운터. setZero에서 0으로 재시드하지 않고 보존한다
+// (entry-hw 모듈의 _prev_*Id와의 충돌 방지 — setZero 주석 참고).
+RaccoonRobot.prototype.__ID_PORTS = [
+    'jointAngleId',
+    'jointModeId',
+    'noteId',
+    'soundId',
+    'slotW1Id',
+    'slotW2Id',
+    'slotW3Id',
+];
+
 RaccoonRobot.prototype.__seedPort = function(motoring, port) {
     const def = this.__PORT_MAP[port];
     // sendQueue 객체는 공유/직렬화되므로 배열은 새 복사본이어야 한다.
@@ -14910,11 +14922,24 @@ RaccoonRobot.prototype.setZero = function() {
     // 명령한다(resetting=true). 정지 시 팔이 원위치로 돌아가는 것이 장치 동작이다.
     // 엔진 정지 후에도 afterReceive는 계속 동작하므로(hw.ts가 'data'를 별도 바인딩)
     // 완료 신호를 받을 수 있고, 아래 3초 타임아웃이 신호가 안 오는 경우를 처리한다.
+    //
+    // *Id 카운터는 세션 내 단조 증가로 보존한다(0 재시드 금지). entry-hw 모듈의 _prev_*Id는
+    // 워크스페이스 소켓이 살아있는 한 유지되는데, 카운터를 0으로 되돌리면 다음 실행이 만드는
+    // id가 이전 실행과 같은 값에 도달해 명령이 통째로 삼켜진다(정지 후 재실행 무반응).
+    // 옛 재시드가 겸하던 부수효과(soundId=0 전송=소리 정지, slotW3Id=0 전송=W3 중립 재전송)는
+    // 아래에서 명시적 id 증가 명령으로 재현한다.
     const portMap = this.__PORT_MAP;
     const motoring = this.motoring;
+    const idPorts = this.__ID_PORTS;
     for (const port in portMap) {
+        if (idPorts.indexOf(port) >= 0 && motoring[port] !== undefined) {
+            continue; // 카운터 보존 (undefined면 아래 시드로 0 초기화)
+        }
         this.__seedPort(motoring, port);
     }
+    this.__setNote(0); // 음 정지 (noteId 증가 포함)
+    this.__setSound(0); // 소리 정지 (soundId 증가 포함)
+    this.__issueSlotW3(); // W3 중립 payload 재전송
     this.jointVelocity1 = 0;
     this.jointVelocity2 = 0;
     this.jointVelocity3 = 0;
@@ -15366,15 +15391,14 @@ RaccoonRobot.prototype.__cancelResetTimeout = function() {
 
 RaccoonRobot.prototype.__reset = function() {
     // _reset(): motoring을 자세 복귀 후 기본값으로 되돌리고 jointState 첫 샘플
-    // 캐시를 다시 준비한다.
+    // 캐시를 다시 준비한다. jointAngleId/jointModeId 카운터는 건드리지 않는다
+    // (0 재시드 시 다음 실행의 id가 entry-hw _prev와 충돌해 명령이 삼켜짐 — setZero 주석 참고).
     const motoring = this.motoring;
     motoring.jointSpeed = 100;
-    motoring.jointAngleId = 0;
     motoring.jointAngle1 = 0;
     motoring.jointAngle2 = -10;
     motoring.jointAngle3 = -140;
     motoring.jointAngle4 = 60;
-    motoring.jointModeId = 0;
     motoring.jointMode = 0;
     this.jointStateId = -1;
 };
